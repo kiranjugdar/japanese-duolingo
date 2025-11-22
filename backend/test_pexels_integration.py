@@ -41,9 +41,15 @@ headers = {"Authorization": f"Bearer {token}"}
 image_url = "http://127.0.0.1:8000/generate-image"
 
 test_words = [
-    {"word": "犬", "english_meaning": "dog"},
-    {"word": "木", "english_meaning": "tree"},
+    {"word": "友", "english_meaning": "friend"},
+    {"word": "皿", "english_meaning": "plate"},
+    {"word": "風", "english_meaning": "wind"},
+    {"word": "鳥の巣", "english_meaning": "bird's nest"},
 ]
+
+print("\n" + "="*60)
+print("Testing Pexels API Integration")
+print("="*60)
 
 for test_data in test_words:
     print(f"\n{'='*60}")
@@ -58,7 +64,7 @@ for test_data in test_words:
         if response.status_code == 200:
             print(f"✓ Image generated successfully")
             print(f"⏱️  Client-side time: {elapsed:.2f}s")
-            print(f"📦 Response size: {len(response.content)} bytes")
+            print(f"📦 Response size: {len(response.content):,} bytes")
         else:
             print(f"✗ Error: {response.status_code}")
             print(f"Response: {response.text}")
@@ -66,5 +72,8 @@ for test_data in test_words:
         print(f"✗ Error: {e}")
 
 print("\n" + "="*60)
-print("Check the backend server logs above for detailed timing!")
+print("Check the backend server logs for:")
+print("  ✓ Which images came from Pexels (stock photos)")
+print("  🎨 Which images fell back to Pollinations.ai (AI-generated)")
+print("  ⚡ Which images were returned from cache")
 print("="*60)

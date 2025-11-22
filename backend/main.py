@@ -132,6 +132,49 @@ class ImageGenerateRequest(BaseModel):
     english_meaning: str
 
 
+async def fetch_image_from_pexels(search_term: str) -> str:
+    """
+    Fetch image URL from Pexels API (fast, free stock photos)
+    Returns the image URL if found, None otherwise
+    """
+    pexels_api_key = os.getenv("PEXELS_API_KEY")
+    if not pexels_api_key:
+        logger.warning("PEXELS_API_KEY not set in .env file")
+        return None
+
+    try:
+        headers = {"Authorization": pexels_api_key}
+        url = f"https://api.pexels.com/v1/search?query={search_term}&per_page=1&orientation=square"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("photos") and len(data["photos"]) > 0:
+                # Get medium-sized image (faster download)
+                image_url = data["photos"][0]["src"]["medium"]
+                logger.info(f"✓ Found Pexels image for '{search_term}'")
+                return image_url
+            else:
+                logger.info(f"✗ No Pexels image found for '{search_term}'")
+                return None
+    except Exception as e:
+        logger.warning(f"Pexels API error for '{search_term}': {e}")
+        return None
+
+
+async def generate_image_with_pollinations(search_term: str) -> str:
+    """
+    Generate image using Pollinations.ai (fallback)
+    Returns the image URL
+    """
+    prompt = f"a simple clear photo of {search_term}"
+    image_url = f"https://image.pollinations.ai/prompt/{prompt.replace(' ', '%20')}?width=512&height=512&nologo=true"
+    logger.info(f"🎨 Generating image with Pollinations.ai for '{search_term}'")
+    return image_url
+
+
 @app.post("/generate-image")
 async def generate_word_image(
     request: ImageGenerateRequest,
@@ -139,8 +182,10 @@ async def generate_word_image(
     db: Session = Depends(get_db)
 ):
     """
-    Generate an image for a Japanese word using Pollinations.ai (free)
-    With caching: reuses previously generated images
+    Get image for a Japanese word:
+    1. Check cache (database)
+    2. Try Pexels API (fast, free stock photos)
+    3. Fallback to Pollinations.ai (AI generation)
     """
     try:
         start_time = time.time()
@@ -162,14 +207,16 @@ async def generate_word_image(
                 filename=f"{request.word}_{request.english_meaning}.png"
             )
 
-        # Generate new image using Pollinations.ai (free, no API key needed)
-        logger.info(f"🎨 Generating new image for {request.word} ({request.english_meaning})")
+        logger.info(f"🔍 Fetching new image for {request.word} ({request.english_meaning})")
 
-        # Simple prompt for clear, basic images
-        prompt = f"a simple clear photo of {request.english_meaning}"
+        # Try Pexels API first (fast stock photos)
+        image_url = await fetch_image_from_pexels(request.english_meaning)
+        source = "Pexels"
 
-        # Pollinations.ai free API - just use the URL directly
-        image_url = f"https://image.pollinations.ai/prompt/{prompt.replace(' ', '%20')}?width=512&height=512&nologo=true"
+        # Fallback to AI generation if no stock photo found
+        if not image_url:
+            image_url = await generate_image_with_pollinations(request.english_meaning)
+            source = "Pollinations.ai"
 
         # Download the image
         fetch_start = time.time()
@@ -186,7 +233,7 @@ async def generate_word_image(
 
         fetch_time = time.time() - fetch_start
         total_time = time.time() - start_time
-        logger.info(f"✅ Image fetched in {fetch_time:.2f}s, total time: {total_time:.2f}s")
+        logger.info(f"✅ Image from {source} saved in {fetch_time:.2f}s, total time: {total_time:.2f}s")
 
         # Cache the image path in database
         if db_word:
@@ -199,5 +246,5 @@ async def generate_word_image(
             filename=f"{request.word}_{request.english_meaning}.png"
         )
     except Exception as e:
-        print(f"Error generating image: {e}")
+        logger.error(f"Error getting image: {e}")
         raise HTTPException(status_code=500, detail=str(e))
