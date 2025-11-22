@@ -42,6 +42,14 @@ Thumbs.db
 # Generated images
 backend/generated_images/
 
+# Vercel
+.vercel
+*/.vercel
+
+# Next.js
+frontend/.next/
+frontend/out/
+
 # Frontend (if keeping as separate repo)
 # Uncomment if you want to ignore frontend completely
 # frontend/

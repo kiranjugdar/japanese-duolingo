@@ -19,3 +19,11 @@ ENV/
 # IDE
 .vscode/
 .idea/
+
+# Vercel
+.vercel
+
+# SQLite (use Supabase/PostgreSQL in production)
+*.db
+*.sqlite
+*.sqlite3

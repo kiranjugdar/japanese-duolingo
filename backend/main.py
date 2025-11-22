@@ -19,15 +19,16 @@ logger = logging.getLogger("uvicorn")
 
 load_dotenv()
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Note: Tables should be created manually using create_tables.py
+# Don't create tables on every cold start in serverless environment
+# Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# Enable CORS
+# Enable CORS - Allow all origins for deployment testing
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],  # Allow all origins - you can restrict this later to specific domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -183,29 +184,40 @@ async def generate_word_image(
 ):
     """
     Get image for a Japanese word:
-    1. Check cache (database)
+    1. Check if we have cached image URL in database
     2. Try Pexels API (fast, free stock photos)
     3. Fallback to Pollinations.ai (AI generation)
+
+    Note: Vercel serverless functions have read-only filesystem,
+    so we cache URLs in database and stream images directly
     """
     try:
         start_time = time.time()
 
-        # Check if we already have a cached image for this word
+        # Check if we already have a cached image URL for this word
         db_word = db.query(Word).filter(Word.jp_word == request.word).first()
 
-        # Create output directory if it doesn't exist
-        output_dir = os.path.join(os.path.dirname(__file__), "generated_images")
-        os.makedirs(output_dir, exist_ok=True)
+        # Check if cached path is a valid URL (not an old file path)
+        if db_word and db_word.image_path and (db_word.image_path.startswith('http://') or db_word.image_path.startswith('https://')):
+            # Return cached image URL by fetching and streaming it
+            logger.info(f"⚡ CACHE HIT: Using cached image URL for {request.word}")
 
-        if db_word and db_word.image_path and os.path.exists(db_word.image_path):
-            # Return cached image
-            elapsed_time = time.time() - start_time
-            logger.info(f"⚡ CACHE HIT: Returning cached image for {request.word} (took {elapsed_time:.2f}s)")
-            return FileResponse(
-                db_word.image_path,
-                media_type="image/png",
-                filename=f"{request.word}_{request.english_meaning}.png"
-            )
+            try:
+                # Fetch the cached image and return it
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    img_response = await client.get(db_word.image_path)
+                    img_response.raise_for_status()
+
+                    return Response(
+                        content=img_response.content,
+                        media_type="image/png",
+                        headers={"Content-Disposition": f'inline; filename="{request.english_meaning}.png"'}
+                    )
+            except Exception as e:
+                # If cached URL fails, clear it and generate new one
+                logger.warning(f"Cached image URL failed for {request.word}: {e}, generating new one")
+                db_word.image_path = None
+                db.commit()
 
         logger.info(f"🔍 Fetching new image for {request.word} ({request.english_meaning})")
 
@@ -218,33 +230,29 @@ async def generate_word_image(
             image_url = await generate_image_with_pollinations(request.english_meaning)
             source = "Pollinations.ai"
 
-        # Download the image
+        # Fetch the image and stream it to client
         fetch_start = time.time()
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(image_url)
-            response.raise_for_status()
-
-            # Save image locally
-            safe_filename = f"{request.word}_{request.english_meaning.replace(' ', '_')}.png"
-            image_path = os.path.join(output_dir, safe_filename)
-
-            with open(image_path, "wb") as f:
-                f.write(response.content)
+            img_response = await client.get(image_url)
+            img_response.raise_for_status()
 
         fetch_time = time.time() - fetch_start
         total_time = time.time() - start_time
-        logger.info(f"✅ Image from {source} saved in {fetch_time:.2f}s, total time: {total_time:.2f}s")
+        logger.info(f"✅ Image from {source} fetched in {fetch_time:.2f}s, total time: {total_time:.2f}s")
 
-        # Cache the image path in database
+        # Cache the image URL in database (not the file, just the URL)
         if db_word:
-            db_word.image_path = image_path
+            db_word.image_path = image_url  # Store URL instead of file path
             db.commit()
 
-        return FileResponse(
-            image_path,
+        return Response(
+            content=img_response.content,
             media_type="image/png",
-            filename=f"{request.word}_{request.english_meaning}.png"
+            headers={"Content-Disposition": f'inline; filename="{request.english_meaning}.png"'}
         )
     except Exception as e:
-        logger.error(f"Error getting image: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Error getting image for {request.word}: {e}")
+        logger.error(f"Full traceback: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
