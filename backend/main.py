@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from database import engine, get_db, Base
 from models import User, Word, UserWord
 import auth
-import httpx
 
 load_dotenv()
 
@@ -31,7 +30,6 @@ app.add_middleware(
 app.include_router(auth.router)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-HF_API_KEY = os.getenv("HF_API_KEY")
 
 class GenerateRequest(BaseModel):
     pass # No longer need excluded_words from client
@@ -116,27 +114,7 @@ async def generate_words(
         print(f"Error generating words: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/image")
-async def get_image(prompt: str):
-    API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
-    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(API_URL, headers=headers, json={"inputs": prompt}, timeout=30.0)
-            
-            if response.status_code != 200:
-                print(f"HF Error: {response.text}")
-                raise HTTPException(status_code=500, detail="Failed to generate image")
-            
-            return Response(
-                content=response.content, 
-                media_type="image/jpeg",
-                headers={"Cache-Control": "public, max-age=31536000, immutable"}
-            )
-    except Exception as e:
-        print(f"Image generation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/")
 def read_root():
