@@ -1,11 +1,23 @@
 INFO:     Will watch for changes in these directories: ['/Users/kiran/Downloads/development/source/japanse-duallingo/backend']
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [87378] using StatReload
-INFO:     Started server process [87558]
+INFO:     Started reloader process [90832] using StatReload
+INFO:     Started server process [90834]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:51695 - "POST /signup HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51713 - "POST /signup HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51713 - "OPTIONS /generate HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51713 - "POST /generate HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51757 - "POST /generate HTTP/1.1" 200 OK
+HF Error: {"error":"This authentication method does not have sufficient permissions to call Inference Providers on behalf of user Kiranjugdar"}
+Image generation error: 500: Failed to generate image
+INFO:     127.0.0.1:53836 - "GET /image?prompt=cat HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:54117 - "GET /image?prompt=cat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54199 - "OPTIONS /generate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54199 - "POST /generate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54199 - "POST /token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54199 - "POST /generate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54241 - "GET /image?prompt=friend HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [90834]
+INFO:     Started server process [91495]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
