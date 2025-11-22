@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List
 import os
@@ -10,6 +11,11 @@ from sqlalchemy.orm import Session
 from database import engine, get_db, Base
 from models import User, Word, UserWord
 import auth
+import httpx
+import time
+import logging
+
+logger = logging.getLogger("uvicorn")
 
 load_dotenv()
 
@@ -119,3 +125,79 @@ async def generate_words(
 @app.get("/")
 def read_root():
     return {"message": "Japanese Learning API is running"}
+
+
+class ImageGenerateRequest(BaseModel):
+    word: str
+    english_meaning: str
+
+
+@app.post("/generate-image")
+async def generate_word_image(
+    request: ImageGenerateRequest,
+    current_user: User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate an image for a Japanese word using Pollinations.ai (free)
+    With caching: reuses previously generated images
+    """
+    try:
+        start_time = time.time()
+
+        # Check if we already have a cached image for this word
+        db_word = db.query(Word).filter(Word.jp_word == request.word).first()
+
+        # Create output directory if it doesn't exist
+        output_dir = os.path.join(os.path.dirname(__file__), "generated_images")
+        os.makedirs(output_dir, exist_ok=True)
+
+        if db_word and db_word.image_path and os.path.exists(db_word.image_path):
+            # Return cached image
+            elapsed_time = time.time() - start_time
+            logger.info(f"⚡ CACHE HIT: Returning cached image for {request.word} (took {elapsed_time:.2f}s)")
+            return FileResponse(
+                db_word.image_path,
+                media_type="image/png",
+                filename=f"{request.word}_{request.english_meaning}.png"
+            )
+
+        # Generate new image using Pollinations.ai (free, no API key needed)
+        logger.info(f"🎨 Generating new image for {request.word} ({request.english_meaning})")
+
+        # Simple prompt for clear, basic images
+        prompt = f"a simple clear photo of {request.english_meaning}"
+
+        # Pollinations.ai free API - just use the URL directly
+        image_url = f"https://image.pollinations.ai/prompt/{prompt.replace(' ', '%20')}?width=512&height=512&nologo=true"
+
+        # Download the image
+        fetch_start = time.time()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(image_url)
+            response.raise_for_status()
+
+            # Save image locally
+            safe_filename = f"{request.word}_{request.english_meaning.replace(' ', '_')}.png"
+            image_path = os.path.join(output_dir, safe_filename)
+
+            with open(image_path, "wb") as f:
+                f.write(response.content)
+
+        fetch_time = time.time() - fetch_start
+        total_time = time.time() - start_time
+        logger.info(f"✅ Image fetched in {fetch_time:.2f}s, total time: {total_time:.2f}s")
+
+        # Cache the image path in database
+        if db_word:
+            db_word.image_path = image_path
+            db.commit()
+
+        return FileResponse(
+            image_path,
+            media_type="image/png",
+            filename=f"{request.word}_{request.english_meaning}.png"
+        )
+    except Exception as e:
+        print(f"Error generating image: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -21,6 +21,7 @@ class Word(Base):
     romaji = Column(String)
     english = Column(String)
     image_search_term = Column(String)
+    image_path = Column(String, nullable=True)  # Cache generated image path
 
     user_associations = relationship("UserWord", back_populates="word")
 
